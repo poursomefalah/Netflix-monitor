@@ -1,0 +1,43 @@
+name: Netflix Top 10 monitor
+
+on:
+  schedule:
+    # Two start times because GitHub uses UTC and Eastern Time shifts for daylight saving.
+    # The script itself only runs inside Tue 10:30-16:00 Eastern and exits otherwise.
+    - cron: "25 14 * * 2"
+    - cron: "25 15 * * 2"
+  workflow_dispatch:
+    inputs:
+      test:
+        description: "Send a TEST notification with the latest week"
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: netflix-monitor
+  cancel-in-progress: false
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 345
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - name: Run monitor
+        env:
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+        run: python monitor.py ${{ inputs.test && '--test' || '' }}
+      - name: Save state (prevents duplicate notifications)
+        if: always()
+        run: |
+          git config user.name "monitor-bot"
+          git config user.email "monitor-bot@users.noreply.github.com"
+          git add state.json || true
+          git diff --cached --quiet || (git commit -m "Update state" && git pull --rebase && git push)
